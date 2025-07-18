@@ -1,3 +1,11 @@
+mod core;
+
+use crate::core::observer;
+use crate::core::config;
+
 fn main() {
-    println!("Hello, world!");
+    // Initialize configuration
+    
+    // Start file observer
+    let _file_observer = observer::event_listener();
 }
