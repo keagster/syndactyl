@@ -1,32 +1,22 @@
+use std::fs;
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
+use dirs;
 
-#[derive(Serialize, Deserialize)]
-struct Person {
-    name: String,
-    age: u8,
-    phones: Vec<String>,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Observer {
+    pub name: String,
+    pub path: String,
 }
 
-fn typed_example() -> Result<()> {
-    // Some JSON input data as a &str. Maybe this comes from the user.
-    let data = r#"
-        {
-            "name": "John Doe",
-            "age": 43,
-            "phones": [
-                "+44 1234567",
-                "+44 2345678"
-            ]
-        }"#;
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Config {
+    pub observers: Vec<Observer>,
+}
 
-    // Parse the string of data into a Person object. This is exactly the
-    // same function as the one that produced serde_json::Value above, but
-    // now we are asking it for a Person as output.
-    let p: Person = serde_json::from_str(data)?;
-
-    // Do things just like with any other Rust data structure.
-    println!("Please call {} at the number {}", p.name, p.phones[0]);
-
-    Ok(())
+pub fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
+    let mut config_path = dirs::home_dir().ok_or("Could not find any config")?;
+    config_path.push(".config/syndactyl/config.json");
+    let contents = fs::read_to_string(config_path)?;
+    let configuration: Config = serde_json::from_str(&contents)?;
+    Ok(configuration)
 }
