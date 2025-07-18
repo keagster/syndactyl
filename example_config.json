@@ -1,0 +1,12 @@
+{
+  "observers": [
+    {
+      "name": "Observer1",
+      "path": "~/code/projects/k3os/syndactyl"
+    },
+    {
+      "name": "Observer2",
+      "path": "~/Documents"
+    }
+  ]
+}
