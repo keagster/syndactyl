@@ -2,13 +2,13 @@ use std::fs;
 use serde::{Deserialize, Serialize};
 use dirs;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Observer {
     pub name: String,
     pub path: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub observers: Vec<Observer>,
 }

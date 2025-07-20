@@ -5,6 +5,9 @@ use crate::core::config::Observer;
 pub fn event_listener(observers: Vec<Observer>) -> Result<()> {
     let mut handles = Vec::new();
 
+    // TODO: You will have to write a dynamic limiter for this so it
+    // cant run away with too many threads
+    // start a thread for each observer
     for observer in observers {
         let observer_name = observer.name.clone();
         let observer_path = observer.path.clone();
