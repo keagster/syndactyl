@@ -3,14 +3,20 @@ use serde::{Deserialize, Serialize};
 use dirs;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Observer {
+pub struct ObserverConfig {
     pub name: String,
     pub path: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NetworkConfig {
+    pub port: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
-    pub observers: Vec<Observer>,
+    pub observers: Vec<ObserverConfig>,
+    pub network: Option<NetworkConfig>,
 }
 
 pub fn get_config() -> Result<Config, Box<dyn std::error::Error>> {

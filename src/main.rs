@@ -1,4 +1,5 @@
 mod core;
+mod network;
 
 use std::{sync::mpsc, thread};
 
@@ -35,6 +36,12 @@ fn main() {
     }));
 
     // spawn p2p networking and encryption
+    // syndactyl_threads.push(thread::spawn(|| {
+    //     // Run the p2p networking async runtime
+    //     if let Err(e) = crate::network::p2p::peer2peer() {
+    //         eprintln!("p2p networking failed: {}", e);
+    //     }
+    // }));
     // spawn authentication
     // spawn transfer handler. based on the tests projects i played with yesterday when
     // learning libp2p i may want to keep the transfer laying in the network layer.

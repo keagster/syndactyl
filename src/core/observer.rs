@@ -1,8 +1,8 @@
 use notify::{Event, EventKind, RecursiveMode, Result, Watcher};
 use std::{path::Path, sync::mpsc, thread};
-use crate::core::config::Observer;
+use crate::core::config::ObserverConfig;
 
-pub fn event_listener(observers: Vec<Observer>) -> Result<()> {
+pub fn event_listener(observers: Vec<ObserverConfig>) -> Result<()> {
     let mut handles = Vec::new();
 
     // TODO: You will have to write a dynamic limiter for this so it
