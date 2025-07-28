@@ -10,13 +10,11 @@ use libp2p::{
         IdentTopic as Topic,
     },
     identity,
-    swarm::{Swarm, SwarmEvent, Config as SwarmConfig, NetworkBehaviour},
+    swarm::{Swarm, SwarmEvent, Config as SwarmConfig},
     kad::{
         Behaviour as Kademlia,
         Config as KademliaConfig,
         store::MemoryStore,
-        Mode as KademliaMode,
-        Event as KademliaEvent,
     },
     tcp::tokio::Transport as TokioTcpTransport,
     yamux::Config as YamuxConfig,
@@ -25,15 +23,9 @@ use libp2p::{
 };
 use std::error::Error;
 use futures::StreamExt;
-use tokio::runtime::Handle;
 
 use std::str::FromStr;
-
-#[derive(NetworkBehaviour)]
-pub struct SyndactylBehaviour {
-    pub gossipsub: Gossipsub,
-    pub kademlia: Kademlia<MemoryStore>,
-}
+use crate::network::syndactyl_behaviour::{SyndactylBehaviour, SyndactylEvent};
 
 pub struct SyndactylP2P {
     pub peer_id: PeerId,
@@ -94,16 +86,11 @@ impl SyndactylP2P {
     pub async fn poll_events(&mut self) {
         loop {
             match self.swarm.select_next_some().await {
-                SwarmEvent::Behaviour(event) => {
-                    // Match on both Gossipsub and Kademlia events
-                    if let Some(gossip_event) = event.downcast_ref::<GossipsubEvent>() {
-                        if let GossipsubEvent::Message { propagation_source, message_id: _, message } = gossip_event {
-                            println!("Received: {:?} from {:?}", String::from_utf8_lossy(&message.data), propagation_source);
-                        }
-                    }
-                    if let Some(kad_event) = event.downcast_ref::<KademliaEvent>() {
-                        println!("Kademlia event: {:?}", kad_event);
-                    }
+                SwarmEvent::Behaviour(SyndactylEvent::Gossipsub(GossipsubEvent::Message { propagation_source, message_id: _, message })) => {
+                    println!("Received: {:?} from {:?}", String::from_utf8_lossy(&message.data), propagation_source);
+                }
+                SwarmEvent::Behaviour(SyndactylEvent::Kademlia(event)) => {
+                    println!("Kademlia event: {:?}", event);
                 }
                 SwarmEvent::NewListenAddr { address, .. } => {
                     println!("Listening on {:?}", address);
