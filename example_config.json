@@ -2,11 +2,22 @@
   "observers": [
     {
       "name": "Observer1",
-      "path": "~/code/projects/k3os/syndactyl"
+      "path": "/home/k34g5t3r/code/projects/k3os/syndactyl"
     },
     {
       "name": "Observer2",
-      "path": "~/Documents"
+      "path": "/home/k34g5t3r/Documents/Athene_Consulting"
     }
-  ]
+  ],
+  "network": {
+    "port": "49999",
+    "dht_mode": "server",
+    "bootstrap_peers": [
+      {
+        "ip": "",
+        "port": "49999",
+        "peer_id": ""
+      }
+    ]
+  }
 }

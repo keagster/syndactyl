@@ -3,6 +3,7 @@ mod network;
 
 use std::{sync::mpsc, thread};
 
+use crate::network::syndactyl_p2p::SyndactylP2P;
 use crate::core::observer;
 use crate::core::config;
 
@@ -36,12 +37,15 @@ fn main() {
     }));
 
     // spawn p2p networking and encryption
-    // syndactyl_threads.push(thread::spawn(|| {
-    //     // Run the p2p networking async runtime
-    //     if let Err(e) = crate::network::p2p::peer2peer() {
-    //         eprintln!("p2p networking failed: {}", e);
-    //     }
-    // }));
+    if let Some(network_config) = configuration.network.clone() {
+        syndactyl_threads.push(thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                let mut p2p = SyndactylP2P::new(network_config).await.unwrap();
+                p2p.poll_events().await;
+            });
+        }));
+    }
     // spawn authentication
     // spawn transfer handler. based on the tests projects i played with yesterday when
     // learning libp2p i may want to keep the transfer laying in the network layer.

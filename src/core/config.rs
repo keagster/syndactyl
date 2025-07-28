@@ -9,8 +9,17 @@ pub struct ObserverConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BootstrapPeer {
+    pub ip: String,
+    pub port: String,
+    pub peer_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NetworkConfig {
     pub port: String,
+    pub dht_mode: String,
+    pub bootstrap_peers: Vec<BootstrapPeer>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
