@@ -9,4 +9,5 @@ futures = { version = "0.3.31" }
 serde = { version = "1.0.104", features = ["derive"] }
 serde_json = { version = "1.0" }
 dirs = { version = "6.0.0" }
+libp2p = { version = "0.56.0", features = ["tcp", "noise", "yamux", "gossipsub", "kad", "tokio"] }
 tokio = { version = "1", features = ["full"] }
