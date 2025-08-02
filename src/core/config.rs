@@ -17,6 +17,7 @@ pub struct BootstrapPeer {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NetworkConfig {
+    pub listen_addr: String,
     pub port: String,
     pub dht_mode: String,
     pub bootstrap_peers: Vec<BootstrapPeer>,

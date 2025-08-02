@@ -7,8 +7,8 @@ use crate::network::syndactyl_p2p::SyndactylP2P;
 use crate::core::observer;
 use crate::core::config;
 
-fn main() {
-    
+#[tokio::main]
+async fn main() {
     //  Begin application startup
     // Initialize configuration
     let configuration = match config::get_config() {
@@ -22,40 +22,47 @@ fn main() {
         }
     };
     // End application startup
-    
-    // Begin thread management
-    let mut syndactyl_threads: Vec<thread::JoinHandle<()>> = Vec::new();
-    // TODO: create a thread bus Type to manage inter thread comms for in thread logic
-    let (tx, _rx) = mpsc::channel::<String>();
 
-    // Spawn Observer
-    syndactyl_threads.push(thread::spawn(move || {
-        // TODO: once you get this working consider passing rx tx to observer
-        // so you can deal with comms and logic from in there where that logic belongs
-        let _observer = observer::event_listener(configuration.observers.clone());
+    // Spawn Observer (still in a thread, as before)
+    let (tx, _rx) = std::sync::mpsc::channel::<String>();
+    let observer_config = configuration.observers.clone();
+    let observer_thread = thread::spawn(move || {
+        let _observer = observer::event_listener(observer_config);
         tx.send("Observer started".to_string()).unwrap();
-    }));
+    });
 
-    // spawn p2p networking and encryption
+    // P2P networking and encryption (async)
     if let Some(network_config) = configuration.network.clone() {
-        syndactyl_threads.push(thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async move {
-                let mut p2p = SyndactylP2P::new(network_config).await.unwrap();
-                p2p.poll_events().await;
-            });
-        }));
-    }
-    // spawn authentication
-    // spawn transfer handler. based on the tests projects i played with yesterday when
-    // learning libp2p i may want to keep the transfer laying in the network layer.
-    // will know more as i work with it.
+        use tokio::sync::mpsc;
+        use crate::network::syndactyl_p2p::SyndactylP2PEvent;
 
-    for syndactyl_thread in syndactyl_threads {
-        match syndactyl_thread.join() {
-            Ok(_) => println!("Thread completed successfully"),
-            Err(e) => eprintln!("Thread failed: {:?}", e),
+        let (event_sender, mut event_receiver) = mpsc::channel(32);
+        let mut p2p = SyndactylP2P::new(network_config, event_sender).await.unwrap();
+
+        // Spawn the poll_events loop
+        let mut p2p_task = tokio::spawn(async move {
+            p2p.poll_events().await;
+        });
+
+        // Handle events in main
+        while let Some(event) = event_receiver.recv().await {
+            match event {
+                SyndactylP2PEvent::GossipsubMessage { source, data } => {
+                    println!("Received gossip from {:?}: {:?}", source, String::from_utf8_lossy(&data));
+                }
+                SyndactylP2PEvent::KademliaEvent(info) => {
+                    println!("Kademlia event: {}", info);
+                }
+                SyndactylP2PEvent::NewListenAddr(addr) => {
+                    println!("Listening on: {}", addr);
+                }
+            }
         }
+
+        // Optionally, wait for the p2p task to finish (it won't unless you break the loop)
+        let _ = p2p_task.await;
     }
-    // End thread management
+
+    // Wait for observer thread to finish
+    let _ = observer_thread.join();
 }
