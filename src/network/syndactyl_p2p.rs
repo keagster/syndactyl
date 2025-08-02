@@ -25,6 +25,9 @@ use futures::StreamExt;
 use tokio::sync::mpsc::Sender;
 use std::str::FromStr;
 use crate::network::syndactyl_behaviour::{SyndactylBehaviour, SyndactylEvent};
+use tracing::{info, warn, error};
+use crate::core::models::FileEventMessage;
+use serde_json;
 
 /// Events emitted by the SyndactylP2P node.
 #[derive(Debug)]
@@ -91,7 +94,6 @@ impl SyndactylP2P {
             kp
         };
         let peer_id = PeerId::from(id_keys.public());
-        use tracing::info;
         info!(peer_id = %peer_id, "[syndactyl] Local PeerId");
         info!(key_path = %keypair_path.display(), "[syndactyl] Your persistent key is stored at");
 
@@ -181,7 +183,6 @@ impl SyndactylP2P {
     pub fn unsubscribe_topic(&mut self, topic_name: &str) {
         let topic = Topic::new(topic_name);
         let unsubscribed = self.swarm.behaviour_mut().gossipsub.unsubscribe(&topic);
-        use tracing::info;
         info!(topic = topic_name, unsubscribed, "Unsubscribe from topic");
     }
 
@@ -196,7 +197,6 @@ impl SyndactylP2P {
             expires: None,
         };
         if let Err(e) = self.swarm.behaviour_mut().kademlia.put_record(record, Quorum::One) {
-            use tracing::error;
             error!(%e, "[syndactyl][error] Failed to store record");
         }
     }
@@ -214,29 +214,33 @@ impl SyndactylP2P {
         loop {
             match self.swarm.select_next_some().await {
                 SwarmEvent::Behaviour(SyndactylEvent::Gossipsub(GossipsubEvent::Message { propagation_source, message_id: _, message })) => {
-                    use tracing::info;
-                    info!(peer = %propagation_source, msg = %String::from_utf8_lossy(&message.data), "[syndactyl][gossipsub] Received message");
+                    // Try to deserialize as FileEventMessage
+                    match serde_json::from_slice::<FileEventMessage>(&message.data) {
+                        Ok(file_event) => {
+                            info!(peer = %propagation_source, event = ?file_event, "[syndactyl][gossipsub] Received FileEventMessage");
+                            // Here you can add logic to process/apply the event
+                        },
+                        Err(e) => {
+                            warn!(peer = %propagation_source, error = ?e, raw = %String::from_utf8_lossy(&message.data), "[syndactyl][gossipsub] Failed to parse FileEventMessage");
+                        }
+                    }
                     let _ = self.event_sender.send(SyndactylP2PEvent::GossipsubMessage {
                         source: propagation_source,
                         data: message.data,
                     }).await;
                 }
                 SwarmEvent::Behaviour(SyndactylEvent::Kademlia(event)) => {
-                    use tracing::info;
                     info!(event = ?event, "[syndactyl][kademlia] Event");
                     let _ = self.event_sender.send(SyndactylP2PEvent::KademliaEvent(format!("{:?}", event))).await;
                 }
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    use tracing::info;
                     info!(address = %address, "[syndactyl][swarm] Listening on");
                     let _ = self.event_sender.send(SyndactylP2PEvent::NewListenAddr(address.to_string())).await;
                 }
                 SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
-                    use tracing::info;
                     info!(peer_id = %peer_id, endpoint = ?endpoint, "[syndactyl][swarm] Connection established");
                 }
                 SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-                    use tracing::warn;
                     warn!(peer_id = %peer_id, ?cause, "[syndactyl][swarm] Connection closed");
                 }
                 _ => {

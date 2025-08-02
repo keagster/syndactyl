@@ -13,4 +13,4 @@ libp2p = { path="../../../github/rust/rust-libp2p/libp2p", features = ["tcp", "n
 libp2p-swarm-derive = { version = "0.35" }
 tokio = { version = "1", features = ["full"] }
 tracing = { version = "0.1" }
-tracing_subscriber = { version = "0.3" }
+tracing-subscriber = { version = "0.3" }
