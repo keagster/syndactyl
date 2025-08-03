@@ -8,6 +8,10 @@ use crate::network::syndactyl_p2p::SyndactylP2P;
 use crate::core::observer;
 use crate::core::config;
 
+use tokio::sync::mpsc;
+use crate::network::syndactyl_p2p::SyndactylP2PEvent;
+
+
 use tracing::{info, error, warn};
 
 #[tokio::main]
@@ -41,8 +45,6 @@ async fn main() {
     // TODO: Once this is all working try to push a lot of this logic back into the network code
     // instead of letting it live here.
     if let Some(network_config) = configuration.network.clone() {
-        use tokio::sync::mpsc;
-        use crate::network::syndactyl_p2p::SyndactylP2PEvent;
 
         let (event_sender, mut event_receiver) = mpsc::channel(32);
         let mut p2p = SyndactylP2P::new(network_config, event_sender).await.unwrap();
