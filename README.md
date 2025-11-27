@@ -29,3 +29,4 @@ Security
 
 ### Todo
 TODO: Write a simple mod to check OS type and set paths for OS type e.g. os = linux = XDG config path
+TODO: I still need to add permissions and encryption for subscribed folders. This will allow peers to send events and transfers private only to those who have been invited to a subscription.
