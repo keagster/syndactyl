@@ -1,7 +1,7 @@
 use notify::{Event, EventKind, RecursiveMode, Result, Watcher};
 use std::{path::Path, sync::mpsc, thread};
 use crate::core::config::ObserverConfig;
-use tracing::{info, warn, error};
+use tracing::{info, error};
 use crate::core::models::FileEventMessage;
 use serde_json;
 
@@ -34,28 +34,28 @@ pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) 
                             },
                             EventKind::Create(ref create_kind) => {
                                 if let Some(path) = event.paths.get(0) {
-                                    info!(observer = %observer_name, kind = ?create_kind, path = %%path.display(), "created");
+                                    info!(observer = %observer_name, kind = ?create_kind, path = %path.display(), "created");
                                 } else {
                                     info!(observer = %observer_name, kind = ?create_kind, "created, but path unknown");
                                 }
                             },
                             EventKind::Modify(ref modify_kind) => {
                                 if let Some(path) = event.paths.get(0) {
-                                    info!(observer = %observer_name, kind = ?modify_kind, path = %%path.display(), "modified");
+                                    info!(observer = %observer_name, kind = ?modify_kind, path = %path.display(), "modified");
                                 } else {
                                     info!(observer = %observer_name, kind = ?modify_kind, "modified, but path unknown");
                                 }
                             },
                             EventKind::Remove(ref remove_kind) => {
                                 if let Some(path) = event.paths.get(0) {
-                                    info!(observer = %observer_name, kind = ?remove_kind, path = %%path.display(), "removed");
+                                    info!(observer = %observer_name, kind = ?remove_kind, path = %path.display(), "removed");
                                 } else {
                                     info!(observer = %observer_name, kind = ?remove_kind, "removed, but path unknown");
                                 }
                             },
                             EventKind::Other => {
                                 if let Some(path) = event.paths.get(0) {
-                                    info!(observer = %observer_name, path = %%path.display(), "other event");
+                                    info!(observer = %observer_name, path = %path.display(), "other event");
                                 } else {
                                     info!(observer = %observer_name, "other event, but path unknown");
                                 }

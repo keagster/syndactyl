@@ -31,7 +31,6 @@ use serde_json;
 
 /// Events emitted by the SyndactylP2P node.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum SyndactylP2PEvent {
     /// Received a Gossipsub message.
     GossipsubMessage {
@@ -45,7 +44,6 @@ pub enum SyndactylP2PEvent {
 }
 
 /// Main struct for managing the P2P node.
-#[allow(dead_code)]
 pub struct SyndactylP2P {
     pub peer_id: PeerId,
     pub swarm: Swarm<SyndactylBehaviour>,
@@ -151,13 +149,11 @@ impl SyndactylP2P {
     }
 
     /// Get the local PeerId.
-    #[allow(dead_code)]
     pub fn peer_id(&self) -> &PeerId {
         &self.peer_id
     }
 
     /// Publish a message to the default Gossipsub topic.
-    #[allow(dead_code)]
     pub fn publish_gossipsub(&mut self, data: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
         let topic = Topic::new("syndactyl-gossip");
         self.swarm.behaviour_mut().gossipsub.publish(topic, data)?;
@@ -165,13 +161,11 @@ impl SyndactylP2P {
     }
 
     /// Start a Kademlia peer lookup.
-    #[allow(dead_code)]
     pub fn find_peer(&mut self, peer_id: PeerId) {
         self.swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
     }
 
     /// Subscribe to a Gossipsub topic.
-    #[allow(dead_code)]
     pub fn subscribe_topic(&mut self, topic_name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let topic = Topic::new(topic_name);
         self.swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
@@ -179,7 +173,6 @@ impl SyndactylP2P {
     }
 
     /// Unsubscribe from a Gossipsub topic.
-    #[allow(dead_code)]
     pub fn unsubscribe_topic(&mut self, topic_name: &str) {
         let topic = Topic::new(topic_name);
         let unsubscribed = self.swarm.behaviour_mut().gossipsub.unsubscribe(&topic);
@@ -187,7 +180,6 @@ impl SyndactylP2P {
     }
 
     /// Store a record in the Kademlia DHT.
-    #[allow(dead_code)]
     pub fn put_record(&mut self, key: &str, value: Vec<u8>) {
         use libp2p::kad::{Record, Quorum, RecordKey};
         let record = Record {
@@ -202,7 +194,6 @@ impl SyndactylP2P {
     }
 
     /// Retrieve a record from the Kademlia DHT.
-    #[allow(dead_code)]
     pub fn get_record(&mut self, key: &str) {
         use libp2p::kad::RecordKey;
         let key = RecordKey::new(&key);
