@@ -1,14 +1,14 @@
-use crate::core::models::{FileTransferRequest, FileTransferResponse};
+use crate::core::models::FileTransferResponse;
 use crate::core::file_handler;
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{info, error};
 
 /// Chunk size for file transfers (1MB)
 pub const CHUNK_SIZE: usize = 1024 * 1024;
 
-/// Maximum file size to transfer (100MB for now)
-pub const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
+/// Maximum file size to transfer (10GB - effectively unlimited for most use cases)
+pub const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 
 /// In-progress file transfer tracking
 pub struct FileTransferTracker {
@@ -190,6 +190,43 @@ pub fn generate_file_chunks(
     }
     
     Ok(chunks)
+}
+
+/// Generate only the first chunk for initial file transfer response
+/// For large files, subsequent chunks will be requested via FileChunkRequest
+pub fn generate_first_chunk(
+    observer: &str,
+    relative_path: &Path,
+    absolute_path: &Path,
+    hash: &str,
+) -> Result<FileTransferResponse, String> {
+    // Get file metadata
+    let metadata = file_handler::get_file_metadata(absolute_path)
+        .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+    
+    let total_size = metadata.0;
+    
+    if total_size > MAX_FILE_SIZE {
+        return Err(format!("File too large: {} bytes (max: {})", total_size, MAX_FILE_SIZE));
+    }
+    
+    // Read only the first chunk
+    let chunk_data = file_handler::read_file_chunk(absolute_path, 0, CHUNK_SIZE)
+        .map_err(|e| format!("Failed to read first chunk: {}", e))?;
+    
+    let is_last = chunk_data.len() as u64 >= total_size;
+    
+    let response = FileTransferResponse {
+        observer: observer.to_string(),
+        path: relative_path.display().to_string(),
+        data: chunk_data,
+        offset: 0,
+        total_size,
+        hash: hash.to_string(),
+        is_last_chunk: is_last,
+    };
+    
+    Ok(response)
 }
 
 #[cfg(test)]

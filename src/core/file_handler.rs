@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use sha2::{Sha256, Digest};
-use tracing::{info, error, warn};
+use tracing::info;
 
 /// Calculate SHA-256 hash of a file
 pub fn calculate_file_hash(path: &Path) -> io::Result<String> {
