@@ -1,9 +1,11 @@
 use notify::{Event, EventKind, RecursiveMode, Result, Watcher};
 use std::{path::Path, sync::mpsc, thread};
 use crate::core::config::ObserverConfig;
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use crate::core::models::FileEventMessage;
+use crate::core::file_handler;
 use serde_json;
+use std::path::PathBuf;
 
 pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) -> Result<()> {
     let mut handles = Vec::new();
@@ -70,16 +72,55 @@ pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) 
                             EventKind::Remove(_) => "Remove",
                             EventKind::Other => "Other",
                         }.to_string();
-                        let path = event.paths.get(0)
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_else(|| "unknown".to_string());
+                        
+                        let absolute_path = event.paths.get(0)
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|| PathBuf::from("unknown"));
+                        
+                        // Convert to relative path
+                        let base_path = Path::new(&observer_path);
+                        let relative_path = file_handler::to_relative_path(&absolute_path, base_path)
+                            .unwrap_or_else(|| absolute_path.clone());
+                        
+                        // Skip files that shouldn't be synced
+                        if !file_handler::should_sync_file(&relative_path) {
+                            continue;
+                        }
+                        
+                        let path_str = relative_path.display().to_string();
                         let details = Some(format!("{:?}", event.kind));
+                        
+                        // For Create/Modify events, calculate hash and get metadata
+                        let (hash, size, modified_time) = if matches!(event_type.as_str(), "Create" | "Modify") {
+                            if absolute_path.is_file() {
+                                let hash = file_handler::calculate_file_hash(&absolute_path)
+                                    .ok();
+                                let metadata = file_handler::get_file_metadata(&absolute_path)
+                                    .ok();
+                                
+                                if let Some((file_size, mtime)) = metadata {
+                                    (hash, Some(file_size), Some(mtime))
+                                } else {
+                                    (hash, None, None)
+                                }
+                            } else {
+                                // Skip directory events for now
+                                continue;
+                            }
+                        } else {
+                            (None, None, None)
+                        };
+                        
                         let msg = FileEventMessage {
                             observer: observer_name.clone(),
                             event_type,
-                            path,
+                            path: path_str,
                             details,
+                            hash,
+                            size,
+                            modified_time,
                         };
+                        
                         if let Ok(json) = serde_json::to_string(&msg) {
                             let _ = tx.send(json);
                         }
@@ -89,8 +130,11 @@ pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) 
                         let msg = FileEventMessage {
                             observer: observer_name.clone(),
                             event_type: "Error".to_string(),
-                            path: observer_path.clone(),
+                            path: "error".to_string(),
                             details: Some(format!("watch error: {:?}", e)),
+                            hash: None,
+                            size: None,
+                            modified_time: None,
                         };
                         if let Ok(json) = serde_json::to_string(&msg) {
                             let _ = tx.send(json);

@@ -26,11 +26,10 @@ use tokio::sync::mpsc::Sender;
 use std::str::FromStr;
 use crate::network::syndactyl_behaviour::{SyndactylBehaviour, SyndactylEvent};
 use tracing::{info, warn, error};
-use crate::core::models::FileEventMessage;
+use crate::core::models::{FileEventMessage, FileTransferRequest, FileTransferResponse};
 use serde_json;
 
 /// Events emitted by the SyndactylP2P node.
-#[derive(Debug)]
 pub enum SyndactylP2PEvent {
     /// Received a Gossipsub message.
     GossipsubMessage {
@@ -41,6 +40,41 @@ pub enum SyndactylP2PEvent {
     KademliaEvent(String),
     /// Node is listening on a new address.
     NewListenAddr(String),
+    /// Received a file transfer request from a peer.
+    FileTransferRequest {
+        peer: PeerId,
+        request: FileTransferRequest,
+        channel: libp2p::request_response::ResponseChannel<FileTransferResponse>,
+    },
+    /// Received a file transfer response from a peer.
+    FileTransferResponse {
+        peer: PeerId,
+        response: FileTransferResponse,
+    },
+}
+
+impl std::fmt::Debug for SyndactylP2PEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GossipsubMessage { source, data } => f
+                .debug_struct("GossipsubMessage")
+                .field("source", source)
+                .field("data_len", &data.len())
+                .finish(),
+            Self::KademliaEvent(e) => f.debug_tuple("KademliaEvent").field(e).finish(),
+            Self::NewListenAddr(addr) => f.debug_tuple("NewListenAddr").field(addr).finish(),
+            Self::FileTransferRequest { peer, request, .. } => f
+                .debug_struct("FileTransferRequest")
+                .field("peer", peer)
+                .field("request", request)
+                .finish(),
+            Self::FileTransferResponse { peer, response } => f
+                .debug_struct("FileTransferResponse")
+                .field("peer", peer)
+                .field("response", response)
+                .finish(),
+        }
+    }
 }
 
 /// Main struct for managing the P2P node.
@@ -128,10 +162,21 @@ impl SyndactylP2P {
             }
         }
 
+        // Set up file transfer request-response protocol
+        use libp2p::request_response::{ProtocolSupport, cbor};
+        use libp2p::StreamProtocol;
+        
+        let file_transfer_protocol = StreamProtocol::new("/syndactyl/file-transfer/1.0.0");
+        let file_transfer = cbor::Behaviour::<FileTransferRequest, FileTransferResponse>::new(
+            [(file_transfer_protocol, ProtocolSupport::Full)],
+            libp2p::request_response::Config::default(),
+        );
+
         // Combine into custom behaviour
         let behaviour = SyndactylBehaviour {
             gossipsub,
             kademlia,
+            file_transfer,
         };
 
         // Create a Swarm to manage peers and events
@@ -200,6 +245,45 @@ impl SyndactylP2P {
         self.swarm.behaviour_mut().kademlia.get_record(key);
     }
 
+    /// Request a file from a peer
+    pub fn request_file(&mut self, peer: PeerId, request: FileTransferRequest) {
+        use libp2p::request_response::OutboundRequestId;
+        
+        let request_id = self.swarm.behaviour_mut().file_transfer.send_request(&peer, request.clone());
+        info!(
+            peer = %peer,
+            observer = %request.observer,
+            path = %request.path,
+            request_id = ?request_id,
+            "[syndactyl][file-transfer] Requesting file"
+        );
+    }
+
+    /// Send a file response to a peer
+    pub fn send_file_response(
+        &mut self,
+        channel: libp2p::request_response::ResponseChannel<FileTransferResponse>,
+        response: FileTransferResponse,
+    ) {
+        let result = self.swarm.behaviour_mut().file_transfer.send_response(channel, response.clone());
+        if result.is_ok() {
+            info!(
+                observer = %response.observer,
+                path = %response.path,
+                offset = response.offset,
+                size = response.data.len(),
+                is_last = response.is_last_chunk,
+                "[syndactyl][file-transfer] Sent file chunk"
+            );
+        } else {
+            error!(
+                observer = %response.observer,
+                path = %response.path,
+                "[syndactyl][file-transfer] Failed to send response"
+            );
+        }
+    }
+
     pub async fn poll_events(&mut self) {
         use libp2p::swarm::SwarmEvent;
         loop {
@@ -223,6 +307,52 @@ impl SyndactylP2P {
                 SwarmEvent::Behaviour(SyndactylEvent::Kademlia(event)) => {
                     info!(event = ?event, "[syndactyl][kademlia] Event");
                     let _ = self.event_sender.send(SyndactylP2PEvent::KademliaEvent(format!("{:?}", event))).await;
+                }
+                SwarmEvent::Behaviour(SyndactylEvent::FileTransfer(event)) => {
+                    use libp2p::request_response::Event as RREvent;
+                    match event {
+                        RREvent::Message { peer, message, connection_id: _ } => {
+                            use libp2p::request_response::Message;
+                            match message {
+                                Message::Request { request, channel, .. } => {
+                                    info!(
+                                        peer = %peer,
+                                        observer = %request.observer,
+                                        path = %request.path,
+                                        "[syndactyl][file-transfer] Received file request"
+                                    );
+                                    let _ = self.event_sender.send(SyndactylP2PEvent::FileTransferRequest {
+                                        peer,
+                                        request,
+                                        channel,
+                                    }).await;
+                                }
+                                Message::Response { response, .. } => {
+                                    info!(
+                                        peer = %peer,
+                                        observer = %response.observer,
+                                        path = %response.path,
+                                        offset = response.offset,
+                                        is_last = response.is_last_chunk,
+                                        "[syndactyl][file-transfer] Received file response"
+                                    );
+                                    let _ = self.event_sender.send(SyndactylP2PEvent::FileTransferResponse {
+                                        peer,
+                                        response,
+                                    }).await;
+                                }
+                            }
+                        }
+                        RREvent::OutboundFailure { peer, request_id, error, connection_id: _ } => {
+                            error!(peer = %peer, request_id = ?request_id, error = ?error, "[syndactyl][file-transfer] Outbound failure");
+                        }
+                        RREvent::InboundFailure { peer, error, .. } => {
+                            error!(peer = %peer, error = ?error, "[syndactyl][file-transfer] Inbound failure");
+                        }
+                        RREvent::ResponseSent { peer, .. } => {
+                            info!(peer = %peer, "[syndactyl][file-transfer] Response sent");
+                        }
+                    }
                 }
                 SwarmEvent::NewListenAddr { address, .. } => {
                     info!(address = %address, "[syndactyl][swarm] Listening on");
