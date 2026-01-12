@@ -11,7 +11,7 @@ use crate::core::observer;
 use crate::core::config;
 use crate::core::models::{FileTransferRequest, FileTransferResponse, FileChunkRequest};
 use crate::core::file_handler;
-use crate::network::transfer::{FileTransferTracker, generate_file_chunks, generate_first_chunk};
+use crate::network::transfer::{FileTransferTracker, generate_first_chunk};
 
 use tokio::sync::mpsc;
 use crate::network::syndactyl_p2p::SyndactylP2PEvent;

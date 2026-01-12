@@ -23,6 +23,9 @@ struct TransferState {
     expected_hash: String,
     chunks: HashMap<u64, Vec<u8>>, // offset -> data
     base_path: PathBuf,
+    start_time: std::time::Instant,
+    chunks_received: usize,
+    total_chunks: usize,
 }
 
 impl FileTransferTracker {
@@ -42,6 +45,10 @@ impl FileTransferTracker {
         base_path: PathBuf,
     ) {
         let key = (observer.clone(), path.clone());
+        
+        // Calculate total number of chunks
+        let total_chunks = ((total_size + CHUNK_SIZE as u64 - 1) / CHUNK_SIZE as u64) as usize;
+        
         let state = TransferState {
             observer: observer.clone(),
             path: path.clone(),
@@ -49,10 +56,13 @@ impl FileTransferTracker {
             expected_hash: hash,
             chunks: HashMap::new(),
             base_path,
+            start_time: std::time::Instant::now(),
+            chunks_received: 0,
+            total_chunks,
         };
         
         self.transfers.insert(key, state);
-        info!(observer = %observer, path = %path, size = total_size, "Started tracking file transfer");
+        info!(observer = %observer, path = %path, size = total_size, total_chunks = total_chunks, "Started tracking file transfer");
     }
     
     /// Add a chunk to an in-progress transfer
@@ -71,6 +81,18 @@ impl FileTransferTracker {
         
         // Add chunk
         state.chunks.insert(offset, data);
+        state.chunks_received += 1;
+        
+        // Log progress
+        info!(
+            observer = %observer,
+            path = %path,
+            chunk = state.chunks_received,
+            total = state.total_chunks,
+            "Received chunk {} of {}",
+            state.chunks_received,
+            state.total_chunks
+        );
         
         if is_last_chunk {
             // All chunks received, assemble file
@@ -84,6 +106,10 @@ impl FileTransferTracker {
     fn complete_transfer(&mut self, key: &(String, String)) -> Result<Option<PathBuf>, String> {
         let state = self.transfers.remove(key)
             .ok_or_else(|| "Transfer not found".to_string())?;
+        
+        // Calculate elapsed time
+        let elapsed = state.start_time.elapsed();
+        let elapsed_secs = elapsed.as_secs_f64();
         
         // Sort chunks by offset
         let mut offsets: Vec<u64> = state.chunks.keys().copied().collect();
@@ -130,11 +156,20 @@ impl FileTransferTracker {
             return Err(format!("Failed to write file: {}", e));
         }
         
+        // Calculate transfer speed
+        let size_mb = state.total_size as f64 / (1024.0 * 1024.0);
+        let speed_mbps = size_mb / elapsed_secs;
+        
         info!(
             observer = %state.observer,
             path = %state.path,
             size = state.total_size,
-            "File transfer completed successfully"
+            chunks = state.chunks_received,
+            elapsed_secs = format!("{:.2}", elapsed_secs),
+            speed_mbps = format!("{:.2}", speed_mbps),
+            "File transfer completed successfully in {:.2} seconds ({:.2} MB/s)",
+            elapsed_secs,
+            speed_mbps
         );
         
         Ok(Some(absolute_path))
