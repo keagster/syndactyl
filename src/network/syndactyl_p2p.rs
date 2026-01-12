@@ -26,7 +26,7 @@ use tokio::sync::mpsc::Sender;
 use std::str::FromStr;
 use crate::network::syndactyl_behaviour::{SyndactylBehaviour, SyndactylEvent};
 use tracing::{info, warn, error};
-use crate::core::models::{FileEventMessage, FileTransferRequest, FileTransferResponse};
+use crate::core::models::{FileEventMessage, FileTransferRequest, FileTransferResponse, FileChunkRequest, SyndactylRequest};
 use serde_json;
 
 /// Events emitted by the SyndactylP2P node.
@@ -46,12 +46,19 @@ pub enum SyndactylP2PEvent {
         request: FileTransferRequest,
         channel: libp2p::request_response::ResponseChannel<FileTransferResponse>,
     },
+    /// Received a file chunk request from a peer.
+    FileChunkRequest {
+        peer: PeerId,
+        request: FileChunkRequest,
+        channel: libp2p::request_response::ResponseChannel<FileTransferResponse>,
+    },
     /// Received a file transfer response from a peer.
     FileTransferResponse {
         peer: PeerId,
         response: FileTransferResponse,
     },
 }
+
 
 impl std::fmt::Debug for SyndactylP2PEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -73,9 +80,15 @@ impl std::fmt::Debug for SyndactylP2PEvent {
                 .field("peer", peer)
                 .field("response", response)
                 .finish(),
+            Self::FileChunkRequest { peer, request, .. } => f
+                .debug_struct("FileChunkRequest")
+                .field("peer", peer)
+                .field("request", request)
+                .finish(),
         }
     }
 }
+
 
 /// Main struct for managing the P2P node.
 pub struct SyndactylP2P {
@@ -155,9 +168,10 @@ impl SyndactylP2P {
         // Add bootstrap peers
         for peer in &network_config.bootstrap_peers {
             let addr = format!("/ip4/{}/tcp/{}/p2p/{}", peer.ip, peer.port, peer.peer_id);
-            if let Ok(multiaddr) = addr.parse() {
+            if let Ok(multiaddr) = addr.parse::<libp2p::Multiaddr>() {
                 if let Ok(peer_id) = PeerId::from_str(&peer.peer_id) {
-                    kademlia.add_address(&peer_id, multiaddr);
+                    kademlia.add_address(&peer_id, multiaddr.clone());
+                    info!(peer_id = %peer_id, addr = %multiaddr, "Added bootstrap peer");
                 }
             }
         }
@@ -167,7 +181,7 @@ impl SyndactylP2P {
         use libp2p::StreamProtocol;
         
         let file_transfer_protocol = StreamProtocol::new("/syndactyl/file-transfer/1.0.0");
-        let file_transfer = cbor::Behaviour::<FileTransferRequest, FileTransferResponse>::new(
+        let file_transfer = cbor::Behaviour::<SyndactylRequest, FileTransferResponse>::new(
             [(file_transfer_protocol, ProtocolSupport::Full)],
             libp2p::request_response::Config::default(),
         );
@@ -189,6 +203,22 @@ impl SyndactylP2P {
         );
         let listen_addr = listen_addr.parse()?;
         swarm.listen_on(listen_addr)?;
+
+        // Dial bootstrap peers to establish connections
+        for peer in &network_config.bootstrap_peers {
+            // Skip empty peer configurations
+            if peer.ip.is_empty() || peer.peer_id.is_empty() {
+                continue;
+            }
+            
+            let addr = format!("/ip4/{}/tcp/{}/p2p/{}", peer.ip, peer.port, peer.peer_id);
+            if let Ok(multiaddr) = addr.parse::<libp2p::Multiaddr>() {
+                match swarm.dial(multiaddr.clone()) {
+                    Ok(_) => info!(addr = %multiaddr, "Dialing bootstrap peer"),
+                    Err(e) => error!(addr = %multiaddr, error = ?e, "Failed to dial bootstrap peer"),
+                }
+            }
+        }
 
         Ok(Self { peer_id, swarm, event_sender })
     }
@@ -247,9 +277,8 @@ impl SyndactylP2P {
 
     /// Request a file from a peer
     pub fn request_file(&mut self, peer: PeerId, request: FileTransferRequest) {
-        use libp2p::request_response::OutboundRequestId;
-        
-        let request_id = self.swarm.behaviour_mut().file_transfer.send_request(&peer, request.clone());
+        let syndactyl_request = SyndactylRequest::FileTransfer(request.clone());
+        let request_id = self.swarm.behaviour_mut().file_transfer.send_request(&peer, syndactyl_request);
         info!(
             peer = %peer,
             observer = %request.observer,
@@ -258,6 +287,21 @@ impl SyndactylP2P {
             "[syndactyl][file-transfer] Requesting file"
         );
     }
+
+    /// Request a specific chunk from a peer
+    pub fn request_file_chunk(&mut self, peer: PeerId, chunk_request: FileChunkRequest) {
+        let syndactyl_request = SyndactylRequest::FileChunk(chunk_request.clone());
+        let request_id = self.swarm.behaviour_mut().file_transfer.send_request(&peer, syndactyl_request);
+        info!(
+            peer = %peer,
+            observer = %chunk_request.observer,
+            path = %chunk_request.path,
+            offset = chunk_request.offset,
+            request_id = ?request_id,
+            "[syndactyl][file-transfer] Requesting file chunk"
+        );
+    }
+
 
     /// Send a file response to a peer
     pub fn send_file_response(
@@ -282,6 +326,20 @@ impl SyndactylP2P {
                 "[syndactyl][file-transfer] Failed to send response"
             );
         }
+    }
+
+
+    /// Handle an incoming FileChunkRequest event
+    pub fn handle_file_chunk_request(
+        &mut self,
+        _peer: PeerId,
+        _request: FileChunkRequest,
+        _channel: libp2p::request_response::ResponseChannel<FileTransferResponse>,
+    ) {
+        // TODO: Generate the requested chunk from the file and respond
+        // Use request.observer, request.path, request.offset, request.hash
+        // Generate chunk and send using self.send_file_response(channel, response)
+        // Log success or error
     }
 
     pub async fn poll_events(&mut self) {
@@ -313,21 +371,42 @@ impl SyndactylP2P {
                     match event {
                         RREvent::Message { peer, message, connection_id: _ } => {
                             use libp2p::request_response::Message;
+                            // Handle SyndactylRequest (FileTransfer or FileChunk)
                             match message {
                                 Message::Request { request, channel, .. } => {
-                                    info!(
-                                        peer = %peer,
-                                        observer = %request.observer,
-                                        path = %request.path,
-                                        "[syndactyl][file-transfer] Received file request"
-                                    );
-                                    let _ = self.event_sender.send(SyndactylP2PEvent::FileTransferRequest {
-                                        peer,
-                                        request,
-                                        channel,
-                                    }).await;
+                                    // CBOR automatically deserializes the request
+                                    match request {
+                                        SyndactylRequest::FileTransfer(request) => {
+                                            info!(
+                                                peer = %peer,
+                                                observer = %request.observer,
+                                                path = %request.path,
+                                                "[syndactyl][file-transfer] Received file request"
+                                            );
+                                            let _ = self.event_sender.send(SyndactylP2PEvent::FileTransferRequest {
+                                                peer,
+                                                request: request.clone(),
+                                                channel,
+                                            }).await;
+                                        }
+                                        SyndactylRequest::FileChunk(chunk_request) => {
+                                            info!(
+                                                peer = %peer,
+                                                observer = %chunk_request.observer,
+                                                path = %chunk_request.path,
+                                                offset = chunk_request.offset,
+                                                "[syndactyl][file-transfer] Received file chunk request"
+                                            );
+                                            let _ = self.event_sender.send(SyndactylP2PEvent::FileChunkRequest {
+                                                peer,
+                                                request: chunk_request.clone(),
+                                                channel,
+                                            }).await;
+                                        }
+                                    }
                                 }
                                 Message::Response { response, .. } => {
+                                    // CBOR automatically deserializes the response
                                     info!(
                                         peer = %peer,
                                         observer = %response.observer,

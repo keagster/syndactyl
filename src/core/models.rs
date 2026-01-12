@@ -28,3 +28,19 @@ pub struct FileTransferResponse {
     pub hash: String,              // Hash of complete file
     pub is_last_chunk: bool,       // Is this the final chunk?
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FileChunkRequest {
+    pub observer: String,          // Which observer/share this belongs to
+    pub path: String,              // Relative path within the observer
+    pub offset: u64,               // Byte offset to request
+    pub hash: String,              // Expected hash for verification
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum SyndactylRequest {
+    FileTransfer(FileTransferRequest),
+    FileChunk(FileChunkRequest),
+}
+
+

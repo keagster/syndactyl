@@ -10,6 +10,7 @@
     }
   ],
   "network": {
+    "listen_addr": "0.0.0.0",
     "port": "49999",
     "dht_mode": "server",
     "bootstrap_peers": [

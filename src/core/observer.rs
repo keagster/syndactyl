@@ -1,7 +1,7 @@
 use notify::{Event, EventKind, RecursiveMode, Result, Watcher};
 use std::{path::Path, sync::mpsc, thread};
 use crate::core::config::ObserverConfig;
-use tracing::{info, error, warn};
+use tracing::{info, error};
 use crate::core::models::FileEventMessage;
 use crate::core::file_handler;
 use serde_json;

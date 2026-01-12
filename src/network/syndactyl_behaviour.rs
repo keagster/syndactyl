@@ -3,17 +3,14 @@ use libp2p::{
     gossipsub::{Behaviour as Gossipsub, Event as GossipsubEvent},
     kad::{Behaviour as Kademlia, store::MemoryStore, Event as KademliaEvent},
     request_response::{
-        Behaviour as RequestResponse,
         Event as RequestResponseEvent,
-        ProtocolSupport,
         cbor::Behaviour as CborBehaviour,
     },
-    StreamProtocol,
 };
-use crate::core::models::{FileTransferRequest, FileTransferResponse};
+use crate::core::models::{SyndactylRequest, FileTransferResponse};
 
 /// Type alias for our file transfer request-response behaviour
-pub type FileTransferBehaviour = CborBehaviour<FileTransferRequest, FileTransferResponse>;
+pub type FileTransferBehaviour = CborBehaviour<SyndactylRequest, FileTransferResponse>;
 
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "SyndactylEvent")]
@@ -26,7 +23,7 @@ pub struct SyndactylBehaviour {
 pub enum SyndactylEvent {
     Gossipsub(GossipsubEvent),
     Kademlia(KademliaEvent),
-    FileTransfer(RequestResponseEvent<FileTransferRequest, FileTransferResponse>),
+    FileTransfer(RequestResponseEvent<SyndactylRequest, FileTransferResponse>),
 }
 
 impl From<GossipsubEvent> for SyndactylEvent {
@@ -41,8 +38,8 @@ impl From<KademliaEvent> for SyndactylEvent {
     }
 }
 
-impl From<RequestResponseEvent<FileTransferRequest, FileTransferResponse>> for SyndactylEvent {
-    fn from(event: RequestResponseEvent<FileTransferRequest, FileTransferResponse>) -> Self {
+impl From<RequestResponseEvent<SyndactylRequest, FileTransferResponse>> for SyndactylEvent {
+    fn from(event: RequestResponseEvent<SyndactylRequest, FileTransferResponse>) -> Self {
         SyndactylEvent::FileTransfer(event)
     }
 }
