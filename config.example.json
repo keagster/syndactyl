@@ -1,0 +1,26 @@
+{
+  "observers": [
+    {
+      "name": "my-documents",
+      "path": "/home/user/Documents",
+      "shared_secret": "REPLACE_WITH_YOUR_SECRET_KEY"
+    },
+    {
+      "name": "my-photos",
+      "path": "/home/user/Pictures",
+      "shared_secret": "REPLACE_WITH_ANOTHER_SECRET_KEY"
+    }
+  ],
+  "network": {
+    "listen_addr": "0.0.0.0",
+    "port": "4001",
+    "dht_mode": "server",
+    "bootstrap_peers": [
+      {
+        "ip": "192.168.1.100",
+        "port": "4001",
+        "peer_id": "12D3KooWExamplePeerID123456789"
+      }
+    ]
+  }
+}
