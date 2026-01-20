@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Syndactyl Architecture Diagrams</title>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #555;
+            margin-top: 40px;
+            border-bottom: 2px solid #2196F3;
+            padding-bottom: 8px;
+        }
+        .diagram-container {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .description {
+            background: #e3f2fd;
+            padding: 15px;
+            border-left: 4px solid #2196F3;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .mermaid {
+            text-align: center;
+        }
+        .nav {
+            background: white;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .nav a {
+            color: #2196F3;
+            text-decoration: none;
+            margin-right: 20px;
+            font-weight: 500;
+        }
+        .nav a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏗️ Syndactyl Architecture Diagrams</h1>
+    
+    <div class="nav">
+        <strong>Navigation:</strong>
+        <a href="#software-architecture">Software Architecture</a>
+        <a href="#interaction-flow">Interaction Flow</a>
+        <a href="#data-flow">Data Flow</a>
+        <a href="#thread-architecture">Thread Architecture</a>
+        <a href="network-topology.html">Network Topology Examples →</a>
+    </div>
+
+    <div id="software-architecture">
+        <h2>1. Software Architecture</h2>
+        <div class="description">
+            <strong>Overview:</strong> This diagram shows the complete internal component structure of a single Syndactyl node, including all modules, their relationships, and how they interact with external systems.
+        </div>
+        <div class="diagram-container">
+            <div class="mermaid">
+graph TB
+    subgraph "Main Application"
+        Main[main.rs<br/>Application Entry Point]
+    end
+    
+    subgraph "Core Module"
+        Config[Config<br/>config.rs<br/>Load & Parse JSON]
+        Observer[Observer<br/>observer.rs<br/>File System Watcher]
+        Models[Models<br/>models.rs<br/>Data Structures]
+        FileHandler[File Handler<br/>file_handler.rs<br/>File I/O Operations]
+    end
+    
+    subgraph "Network Module"
+        Manager[Network Manager<br/>manager.rs<br/>Event Orchestration]
+        P2P[Syndactyl P2P<br/>syndactyl_p2p.rs<br/>libp2p Node]
+        Behaviour[Syndactyl Behaviour<br/>syndactyl_behaviour.rs<br/>Protocol Composition]
+        Transfer[Transfer Tracker<br/>transfer.rs<br/>Chunk Management]
+    end
+    
+    subgraph "libp2p Protocols"
+        Gossipsub[Gossipsub<br/>Pub/Sub Messaging]
+        Kademlia[Kademlia DHT<br/>Peer Discovery]
+        ReqResp[Request-Response<br/>File Transfer]
+    end
+    
+    subgraph "Transport Layer"
+        TCP[TCP Transport]
+        Noise[Noise Encryption]
+        Yamux[Yamux Multiplexing]
+    end
+    
+    subgraph "File System"
+        WatchedDir1[Watched Directory 1]
+        WatchedDir2[Watched Directory 2]
+        WatchedDirN[Watched Directory N...]
+    end
+    
+    subgraph "Network Peers"
+        Peer1[Peer 1]
+        Peer2[Peer 2]
+        PeerN[Peer N...]
+    end
+    
+    Main --> Config
+    Main --> Observer
+    Main --> Manager
+    
+    Config -.->|Configuration Data| Observer
+    Config -.->|Configuration Data| Manager
+    
+    Observer -->|File Events<br/>std::mpsc| Manager
+    WatchedDir1 -.->|File Change| Observer
+    WatchedDir2 -.->|File Change| Observer
+    WatchedDirN -.->|File Change| Observer
+    Observer --> FileHandler
+    
+    Manager --> P2P
+    Manager --> Transfer
+    Manager --> FileHandler
+    Manager -.->|Uses| Models
+    
+    P2P --> Behaviour
+    P2P -->|tokio::mpsc| Manager
+    
+    Behaviour --> Gossipsub
+    Behaviour --> Kademlia
+    Behaviour --> ReqResp
+    
+    Gossipsub --> TCP
+    Kademlia --> TCP
+    ReqResp --> TCP
+    
+    TCP --> Noise
+    Noise --> Yamux
+    
+    Yamux <-->|Encrypted P2P| Peer1
+    Yamux <-->|Encrypted P2P| Peer2
+    Yamux <-->|Encrypted P2P| PeerN
+    
+    classDef coreClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef networkClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef protocolClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef transportClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef externalClass fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    
+    class Config,Observer,Models,FileHandler coreClass
+    class Manager,P2P,Behaviour,Transfer networkClass
+    class Gossipsub,Kademlia,ReqResp protocolClass
+    class TCP,Noise,Yamux transportClass
+    class WatchedDir1,WatchedDir2,WatchedDirN,Peer1,Peer2,PeerN externalClass
+            </div>
+        </div>
+    </div>
+
+    <div id="interaction-flow">
+        <h2>2. Component Interaction Flow</h2>
+        <div class="description">
+            <strong>Overview:</strong> This sequence diagram shows how a file change propagates through the entire system, from initial detection to remote peer synchronization.
+        </div>
+        <div class="diagram-container">
+            <div class="mermaid">
+sequenceDiagram
+    participant FS as File System
+    participant Obs as Observer Thread
+    participant FH as File Handler
+    participant Mgr as Network Manager
+    participant P2P as P2P Node
+    participant GS as Gossipsub
+    participant Peer as Remote Peer
+    participant RR as Request-Response
+    
+    Note over FS,RR: File Change Detection & Broadcast
+    
+    FS->>Obs: File Modified Event
+    Obs->>FH: Calculate Hash
+    FH-->>Obs: SHA-256 Hash
+    Obs->>Obs: Build FileEventMessage
+    Obs->>Mgr: Send Event (std::mpsc)
+    Mgr->>P2P: Publish to Gossipsub
+    P2P->>GS: Broadcast Message
+    GS-->>Peer: FileEventMessage
+    
+    Note over Peer: Peer receives event and<br/>decides file is needed
+    
+    Peer->>RR: FileTransferRequest
+    RR-->>P2P: Request Received
+    P2P->>Mgr: Request Event (tokio::mpsc)
+    Mgr->>FH: Read File Chunk (0, 1MB)
+    FH-->>Mgr: First Chunk Data
+    Mgr->>P2P: FileTransferResponse
+    P2P->>RR: Send Response
+    RR-->>Peer: First Chunk
+    
+    Note over Peer: Peer requests additional chunks
+    
+    loop For each remaining chunk
+        Peer->>RR: FileChunkRequest (offset)
+        RR-->>P2P: Chunk Request
+        P2P->>Mgr: Chunk Request Event
+        Mgr->>FH: Read Chunk (offset, 1MB)
+        FH-->>Mgr: Chunk Data
+        Mgr->>P2P: FileTransferResponse
+        P2P->>RR: Send Chunk
+        RR-->>Peer: Chunk Data
+    end
+    
+    Note over Peer: Peer assembles file,<br/>verifies hash, writes to disk
+            </div>
+        </div>
+    </div>
+
+    <div id="data-flow">
+        <h2>3. Data Flow Architecture</h2>
+        <div class="description">
+            <strong>Overview:</strong> This diagram illustrates the layered architecture showing how data flows from the application layer down through protocols and transport to the physical network.
+        </div>
+        <div class="diagram-container">
+            <div class="mermaid">
+graph LR
+    subgraph "Application Layer"
+        A1[Observer Events]
+        A2[Transfer Tracker]
+        A3[File Operations]
+    end
+    
+    subgraph "Protocol Layer"
+        P1[Gossipsub<br/>Pub/Sub]
+        P2[Kademlia<br/>DHT]
+        P3[Request-Response<br/>CBOR]
+    end
+    
+    subgraph "Transport Layer"
+        T1[TCP/IP]
+        T2[Noise Encryption]
+        T3[Yamux Multiplexing]
+    end
+    
+    subgraph "Physical Layer"
+        N1[Network Interface]
+    end
+    
+    A1 --> P1
+    A2 --> P3
+    A3 --> P3
+    
+    P1 --> T1
+    P2 --> T1
+    P3 --> T1
+    
+    T1 --> T2
+    T2 --> T3
+    T3 --> N1
+    
+    N1 <--> Internet[Internet/LAN]
+    
+    classDef appLayer fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef protocolLayer fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef transportLayer fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef physicalLayer fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    
+    class A1,A2,A3 appLayer
+    class P1,P2,P3 protocolLayer
+    class T1,T2,T3 transportLayer
+    class N1,Internet physicalLayer
+            </div>
+        </div>
+    </div>
+
+    <div id="thread-architecture">
+        <h2>4. Thread Architecture</h2>
+        <div class="description">
+            <strong>Overview:</strong> This diagram shows the threading model, illustrating how synchronous observer threads communicate with the asynchronous Tokio runtime through channel bridges.
+        </div>
+        <div class="diagram-container">
+            <div class="mermaid">
+graph TB
+    subgraph "Main Thread (Tokio Runtime)"
+        MainAsync[Main Async Context]
+        NetMgr[Network Manager Event Loop]
+    end
+    
+    subgraph "Observer Threads (OS Threads)"
+        Obs1[Observer Thread 1<br/>std::thread]
+        Obs2[Observer Thread 2<br/>std::thread]
+        ObsN[Observer Thread N<br/>std::thread]
+    end
+    
+    subgraph "Channels"
+        StdMpsc[std::mpsc::channel<br/>Observer Events]
+        TokioMpsc[tokio::mpsc::channel<br/>P2P Events]
+        Bridge[Bridge Thread<br/>std::mpsc → tokio::mpsc]
+    end
+    
+    Obs1 -->|Send Events| StdMpsc
+    Obs2 -->|Send Events| StdMpsc
+    ObsN -->|Send Events| StdMpsc
+    
+    StdMpsc --> Bridge
+    Bridge --> TokioMpsc
+    
+    TokioMpsc --> NetMgr
+    
+    MainAsync -.->|Spawns| Obs1
+    MainAsync -.->|Spawns| Obs2
+    MainAsync -.->|Spawns| ObsN
+    MainAsync -.->|Spawns| NetMgr
+    
+    NetMgr -->|tokio::select!| P2PEvents[P2P Events]
+    NetMgr -->|tokio::select!| ObsEvents[Observer Events]
+    NetMgr -->|tokio::select!| SwarmEvents[Swarm Events]
+    
+    classDef asyncClass fill:#e1f5ff,stroke:#0277bd,stroke-width:2px
+    classDef threadClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef channelClass fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    
+    class MainAsync,NetMgr,P2PEvents,ObsEvents,SwarmEvents asyncClass
+    class Obs1,Obs2,ObsN,Bridge threadClass
+    class StdMpsc,TokioMpsc channelClass
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top: 40px; padding: 20px; background: white; border-radius: 8px;">
+        <h2>📖 How to Use These Diagrams</h2>
+        <ul>
+            <li><strong>Software Architecture:</strong> Shows all modules and how they connect. Blue = Core, Orange = Network, Purple = Protocols, Green = Transport, Pink = External</li>
+            <li><strong>Interaction Flow:</strong> Follow the sequence from top to bottom to understand file sync process</li>
+            <li><strong>Data Flow:</strong> Shows the layered architecture from application to network</li>
+            <li><strong>Thread Architecture:</strong> Important for understanding sync/async boundaries and channel communication</li>
+        </ul>
+        <p><strong>Next:</strong> <a href="network-topology.html">View Network Topology Examples →</a></p>
+    </div>
+</body>
+</html>
