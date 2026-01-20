@@ -9,6 +9,9 @@ pub struct FileEventMessage {
     pub hash: Option<String>,      // SHA-256 hash of file content
     pub size: Option<u64>,         // File size in bytes
     pub modified_time: Option<u64>, // Unix timestamp of last modification
+    /// HMAC-SHA256 authentication tag
+    /// Computed over: observer||event_type||path||hash||size||modified_time
+    pub hmac: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

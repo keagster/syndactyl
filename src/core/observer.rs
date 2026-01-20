@@ -1,9 +1,10 @@
 use notify::{Event, EventKind, RecursiveMode, Result, Watcher};
 use std::{path::Path, sync::mpsc, thread};
 use crate::core::config::ObserverConfig;
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use crate::core::models::FileEventMessage;
 use crate::core::file_handler;
+use crate::core::auth;
 use serde_json;
 use std::path::PathBuf;
 
@@ -16,6 +17,7 @@ pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) 
     for observer in observers {
         let observer_name = observer.name.clone();
         let observer_path = observer.path.clone();
+        let observer_secret = observer.shared_secret.clone();
         let tx = tx.clone();
 
         let handle = thread::spawn(move || {
@@ -111,7 +113,7 @@ pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) 
                             (None, None, None)
                         };
                         
-                        let msg = FileEventMessage {
+                        let mut msg = FileEventMessage {
                             observer: observer_name.clone(),
                             event_type,
                             path: path_str,
@@ -119,7 +121,16 @@ pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) 
                             hash,
                             size,
                             modified_time,
+                            hmac: None,
                         };
+                        
+                        // Compute HMAC if shared secret is configured
+                        if let Some(ref secret) = observer_secret {
+                            let hmac = auth::compute_hmac(&msg, secret);
+                            msg.hmac = Some(hmac);
+                        } else {
+                            warn!(observer = %observer_name, "No shared secret configured - messages will not be authenticated");
+                        }
                         
                         if let Ok(json) = serde_json::to_string(&msg) {
                             let _ = tx.send(json);
@@ -127,7 +138,7 @@ pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) 
                     },
                     Err(e) => {
                         error!(observer = %observer_name, error = ?e, "watch error");
-                        let msg = FileEventMessage {
+                        let mut msg = FileEventMessage {
                             observer: observer_name.clone(),
                             event_type: "Error".to_string(),
                             path: "error".to_string(),
@@ -135,7 +146,15 @@ pub fn event_listener(observers: Vec<ObserverConfig>, tx: mpsc::Sender<String>) 
                             hash: None,
                             size: None,
                             modified_time: None,
+                            hmac: None,
                         };
+                        
+                        // Compute HMAC for error messages too if secret is configured
+                        if let Some(ref secret) = observer_secret {
+                            let hmac = auth::compute_hmac(&msg, secret);
+                            msg.hmac = Some(hmac);
+                        }
+                        
                         if let Ok(json) = serde_json::to_string(&msg) {
                             let _ = tx.send(json);
                         }

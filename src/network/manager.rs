@@ -2,8 +2,8 @@ use crate::network::syndactyl_p2p::{SyndactylP2P, SyndactylP2PEvent};
 use crate::network::transfer::{FileTransferTracker, generate_first_chunk, CHUNK_SIZE};
 use crate::network::syndactyl_behaviour::SyndactylEvent;
 use crate::core::models::{FileTransferRequest, FileTransferResponse, FileChunkRequest, FileEventMessage};
-use crate::core::config::Config;
-use crate::core::file_handler;
+use crate::core::config::{Config, ObserverConfig};
+use crate::core::{file_handler, auth};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ use tracing::{info, error, warn};
 /// Manages the P2P network, file transfers, and observer event integration
 pub struct NetworkManager {
     p2p: SyndactylP2P,
-    observer_paths: HashMap<String, PathBuf>,
+    observer_configs: HashMap<String, ObserverConfig>,
     connected_peers: Vec<PeerId>,
     transfer_tracker: FileTransferTracker,
     event_receiver: tokio_mpsc::Receiver<SyndactylP2PEvent>,
@@ -29,10 +29,10 @@ impl NetworkManager {
         let network_config = config.network
             .ok_or("Network configuration is required")?;
 
-        // Build a map of observer name -> base path for file operations
-        let mut observer_paths: HashMap<String, PathBuf> = HashMap::new();
+        // Build a map of observer name -> ObserverConfig for authentication and file operations
+        let mut observer_configs: HashMap<String, ObserverConfig> = HashMap::new();
         for obs in &config.observers {
-            observer_paths.insert(obs.name.clone(), PathBuf::from(&obs.path));
+            observer_configs.insert(obs.name.clone(), obs.clone());
         }
 
         // Create P2P node
@@ -41,7 +41,7 @@ impl NetworkManager {
 
         Ok(Self {
             p2p,
-            observer_paths,
+            observer_configs,
             connected_peers: Vec::new(),
             transfer_tracker: FileTransferTracker::new(),
             event_receiver,
@@ -118,6 +118,31 @@ impl NetworkManager {
             Ok(file_event) => {
                 info!(peer = %source, event = ?file_event, "Received FileEventMessage from P2P");
                 
+                // Verify HMAC if we have a shared secret for this observer
+                if let Some(observer_config) = self.observer_configs.get(&file_event.observer) {
+                    if let Some(ref secret) = observer_config.shared_secret {
+                        // Verify HMAC
+                        if !auth::verify_hmac(&file_event, secret) {
+                            warn!(
+                                peer = %source,
+                                observer = %file_event.observer,
+                                "HMAC verification failed - rejecting unauthorized file event"
+                            );
+                            return;
+                        }
+                        info!(peer = %source, observer = %file_event.observer, "HMAC verified successfully");
+                    } else {
+                        warn!(
+                            peer = %source,
+                            observer = %file_event.observer,
+                            "No shared secret configured for observer - accepting unauthenticated message (INSECURE)"
+                        );
+                    }
+                } else {
+                    info!(observer = %file_event.observer, "Observer not configured locally, ignoring event");
+                    return;
+                }
+                
                 // Check if this is a Create or Modify event with a file we should sync
                 if matches!(file_event.event_type.as_str(), "Create" | "Modify") {
                     self.process_file_event(source, file_event);
@@ -132,9 +157,10 @@ impl NetworkManager {
     /// Process a file event and potentially request the file
     fn process_file_event(&mut self, peer: PeerId, file_event: FileEventMessage) {
         // Check if we have this observer configured locally
-        if let Some(base_path) = self.observer_paths.get(&file_event.observer) {
+        if let Some(observer_config) = self.observer_configs.get(&file_event.observer) {
+            let base_path = PathBuf::from(&observer_config.path);
             let relative_path = std::path::Path::new(&file_event.path);
-            let absolute_path = file_handler::to_absolute_path(relative_path, base_path);
+            let absolute_path = file_handler::to_absolute_path(relative_path, &base_path);
             
             // Check if we need to request this file
             let should_request = if absolute_path.exists() {
@@ -199,10 +225,20 @@ impl NetworkManager {
     ) {
         info!(peer = %peer, observer = %request.observer, path = %request.path, "Received file transfer request");
         
-        // Check if we have this observer and file
-        if let Some(base_path) = self.observer_paths.get(&request.observer) {
+        // Check if we have this observer configured
+        if let Some(observer_config) = self.observer_configs.get(&request.observer) {
+            // TODO: In the next task, we'll add peer allowlist checking here
+            // For now, we log that authorization should be checked
+            if observer_config.shared_secret.is_some() {
+                info!(peer = %peer, observer = %request.observer, "Observer has authentication enabled");
+                // Note: Peer allowlist will be checked in the next implementation phase
+            } else {
+                warn!(peer = %peer, observer = %request.observer, "Observer has no authentication - serving file (INSECURE)");
+            }
+            
+            let base_path = PathBuf::from(&observer_config.path);
             let relative_path = std::path::Path::new(&request.path);
-            let absolute_path = file_handler::to_absolute_path(relative_path, base_path);
+            let absolute_path = file_handler::to_absolute_path(relative_path, &base_path);
             
             if absolute_path.exists() && absolute_path.is_file() {
                 // Generate only the first chunk for initial response
@@ -315,10 +351,17 @@ impl NetworkManager {
             "Received file chunk request"
         );
         
-        // Locate file and generate chunk
-        if let Some(base_path) = self.observer_paths.get(&request.observer) {
+        // Check if we have this observer configured
+        if let Some(observer_config) = self.observer_configs.get(&request.observer) {
+            // TODO: In the next task, we'll add peer allowlist checking here
+            if observer_config.shared_secret.is_some() {
+                info!(peer = %peer, observer = %request.observer, "Observer has authentication enabled");
+                // Note: Peer allowlist will be checked in the next implementation phase
+            }
+            
+            let base_path = PathBuf::from(&observer_config.path);
             let relative_path = std::path::Path::new(&request.path);
-            let absolute_path = file_handler::to_absolute_path(relative_path, base_path);
+            let absolute_path = file_handler::to_absolute_path(relative_path, &base_path);
             if absolute_path.exists() && absolute_path.is_file() {
                 match file_handler::read_file_chunk(&absolute_path, request.offset, CHUNK_SIZE) {
                     Ok(data) => {
@@ -429,10 +472,11 @@ impl NetworkManager {
                                     "[swarm] Received file transfer request"
                                 );
                                 
-                                // Check if we have this observer and file
-                                if let Some(base_path) = self.observer_paths.get(&req.observer) {
+                                // Check if we have this observer configured
+                                if let Some(observer_config) = self.observer_configs.get(&req.observer) {
+                                    let base_path = PathBuf::from(&observer_config.path);
                                     let relative_path = std::path::Path::new(&req.path);
-                                    let absolute_path = file_handler::to_absolute_path(relative_path, base_path);
+                                    let absolute_path = file_handler::to_absolute_path(relative_path, &base_path);
                                     
                                     if absolute_path.exists() && absolute_path.is_file() {
                                         // Generate only the first chunk for initial response
@@ -481,10 +525,11 @@ impl NetworkManager {
                                     "[swarm] Received file chunk request"
                                 );
                                 
-                                // Locate file and generate chunk
-                                if let Some(base_path) = self.observer_paths.get(&chunk_req.observer) {
+                                // Check if we have this observer configured
+                                if let Some(observer_config) = self.observer_configs.get(&chunk_req.observer) {
+                                    let base_path = PathBuf::from(&observer_config.path);
                                     let relative_path = std::path::Path::new(&chunk_req.path);
-                                    let absolute_path = file_handler::to_absolute_path(relative_path, base_path);
+                                    let absolute_path = file_handler::to_absolute_path(relative_path, &base_path);
                                     if absolute_path.exists() && absolute_path.is_file() {
                                         match file_handler::read_file_chunk(&absolute_path, chunk_req.offset, CHUNK_SIZE) {
                                             Ok(data) => {

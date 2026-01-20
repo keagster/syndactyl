@@ -2788,6 +2788,7 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "futures",
+ "hmac",
  "libp2p",
  "libp2p-swarm-derive 0.35.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "notify",

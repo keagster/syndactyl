@@ -6,6 +6,9 @@ use dirs;
 pub struct ObserverConfig {
     pub name: String,
     pub path: String,
+    /// Optional shared secret for HMAC authentication
+    /// If not provided, observer will not use authentication (insecure)
+    pub shared_secret: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
